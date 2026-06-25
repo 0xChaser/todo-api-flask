@@ -38,9 +38,14 @@ pytest test_app.py -v
 # Construire l'image
 docker build -t todo-api .
 
-# Lancer un conteneur (le volume persiste la base sur l'hôte)
-docker run -p 5000:5000 -v $(pwd)/todos.db:/app/todos.db todo-api
+# Lancer un conteneur (volume nommé = persistance de la base)
+docker run -p 5000:5000 -v todo-data:/app/data todo-api
 ```
+
+La base est stockée dans `/app/data/todos.db` (variable `DB_PATH`). On monte un
+**volume nommé** sur le dossier `/app/data` : ce dossier est créé et possédé par
+l'utilisateur non-root `appuser` dans l'image, ce qui évite les erreurs de droits
+(`unable to open database file`) liées au montage d'un simple fichier.
 
 ## Scanner l'image avec Trivy
 
@@ -67,3 +72,57 @@ trivy image --format cyclonedx --output sbom.cdx.json todo-api
 # Inspecter le contenu
 cat sbom.spdx.json | jq .
 ```
+## Pousser l'image sur DockerHub
+
+```bash
+# Se connecter à DockerHub
+docker login
+
+# Construire l'image avec deux tags
+docker build -t 0xchaser/todo-api:latest -t 0xchaser/todo-api:v1.0.0 .
+
+# Pousser les deux tags
+docker push 0xchaser/todo-api:latest
+docker push 0xchaser/todo-api:v1.0.0
+```
+
+Repository DockerHub : https://hub.docker.com/r/0xchaser/todo-api
+
+## Déploiement
+
+### Docker
+
+```bash
+docker run -d -p 80:5000 -v todo-data:/app/data 0xchaser/todo-api:latest
+# Application accessible sur http://localhost/todos
+```
+
+### Docker Compose
+
+Le fichier `docker-compose.yml` décrit le service, le volume nommé et le mapping
+de port (`80:5000`).
+
+```bash
+docker compose up -d
+docker compose ps
+docker compose logs -f
+docker compose down
+```
+
+Application accessible sur http://localhost/todos.
+
+## Bonnes pratiques suivies
+
+- **Tagging** : image taguée `latest` (dernière version) **et** `v1.0.0`
+  (version figée), pour garantir des déploiements reproductibles.
+- **Sécurité** :
+  - image de base légère `python:3.11-slim` (surface d'attaque réduite) ;
+  - exécution en utilisateur **non-root** (`appuser`) ;
+  - scan des vulnérabilités avec **Trivy** + génération d'un **SBOM** (SPDX & CycloneDX) ;
+  - aucun secret dans l'image ; `todos.db` exclu du dépôt (`.gitignore`).
+- **Cache de build** : `requirements.txt` copié avant le code source pour
+  réutiliser la couche d'installation des dépendances.
+- **Persistance** : base de données dans un **volume nommé** (`todo-data`),
+  indépendant du cycle de vie du conteneur.
+- **Résilience** : `restart: unless-stopped` pour redémarrer automatiquement le
+  conteneur en cas d'arrêt inattendu.

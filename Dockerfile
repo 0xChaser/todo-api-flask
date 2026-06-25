@@ -8,8 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Définir le répertoire de travail
 WORKDIR /app
 
-# Créer un utilisateur non-root
-RUN useradd -m appuser && chown -R appuser /app
+RUN useradd -m appuser && mkdir -p /app/data && chown -R appuser /app
+
+ENV DB_PATH=/app/data/todos.db
 
 COPY requirements.txt .
 
